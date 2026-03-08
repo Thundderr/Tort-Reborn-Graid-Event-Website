@@ -62,9 +62,9 @@ export const RETIRED_TERRITORIES = new Set<string>([
  */
 export function shouldRenderTerritory(
   name: string,
-  viewMode: "live" | "history",
+  viewMode: "live" | "history" | "simulator",
 ): boolean {
-  if (viewMode === "live" && RETIRED_TERRITORIES.has(name)) return false;
+  if ((viewMode === "live" || viewMode === "simulator") && RETIRED_TERRITORIES.has(name)) return false;
   return true;
 }
 

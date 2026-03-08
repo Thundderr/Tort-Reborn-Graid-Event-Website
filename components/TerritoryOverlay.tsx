@@ -4,6 +4,12 @@ import React, { useMemo, useState, useEffect } from "react";
 import { Territory, coordToPixel } from "@/lib/utils";
 import { TerritoryVerboseData } from "@/lib/connection-calculator";
 
+interface SimModeProps {
+  owned: boolean;
+  isHQ: boolean;
+  connected: boolean;
+}
+
 interface TerritoryOverlayProps {
   name: string;
   territory: Territory;
@@ -19,6 +25,7 @@ interface TerritoryOverlayProps {
   verboseData?: TerritoryVerboseData | null;
   opaqueFill?: boolean;
   fallbackColor?: string;
+  simMode?: SimModeProps;
 }
 
 // Stroke width for territory outlines
@@ -85,6 +92,7 @@ export default function TerritoryOverlay({
   verboseData,
   opaqueFill = false,
   fallbackColor = '#FFFFFF',
+  simMode,
 }: TerritoryOverlayProps) {
   // Use scale prop for zoom, define at top
   const zoom = scale;
@@ -351,9 +359,26 @@ export default function TerritoryOverlay({
     >
       <polygon
         points={points}
-        fill={guildColor + (opaqueFill ? "FF" : "40")}
-        stroke={guildColor}
-        strokeWidth={STROKE_WIDTH}
+        fill={
+          simMode
+            ? simMode.owned
+              ? '#00BCD4' + '99' // teal 60%
+              : '#80808026' // gray 15%
+            : guildColor + (opaqueFill ? "FF" : "40")
+        }
+        stroke={
+          simMode
+            ? simMode.isHQ
+              ? '#FFD700' // gold for HQ
+              : simMode.owned
+                ? simMode.connected
+                  ? '#00BCD4' // teal for connected owned
+                  : '#EF5350' // red for disconnected
+                : '#80808040' // dim gray for unowned
+            : guildColor
+        }
+        strokeWidth={simMode ? (simMode.owned ? STROKE_WIDTH : 2) : STROKE_WIDTH}
+        strokeDasharray={simMode && simMode.owned && !simMode.connected && !simMode.isHQ ? '8 4' : undefined}
         style={{ pointerEvents: "auto", cursor: isDragging ? "grabbing" : "grab" }}
         onPointerDown={e => {
           dragState.current.down = true;

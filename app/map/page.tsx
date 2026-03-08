@@ -10,9 +10,14 @@ import TradeRoutesOverlay from "@/components/TradeRoutesOverlay";
 import GuildTerritoryCount from "@/components/GuildTerritoryCount";
 import MapSettings from "@/components/MapSettings";
 import MapModeSelector from "@/components/MapModeSelector";
+import type { MapViewMode } from "@/components/MapModeSelector";
 import MapHistoryControls from "@/components/MapHistoryControls";
 import FactionPanel from "@/components/FactionPanel";
 import ConflictFinder from "@/components/ConflictFinder";
+import { useSimulator } from "@/hooks/useSimulator";
+import SimulatorControlPanel from "@/components/simulator/SimulatorControlPanel";
+import SimTerritoryPanel from "@/components/simulator/SimTerritoryPanel";
+import SimSpeedControls from "@/components/simulator/SimSpeedControls";
 import { TerritoryVerboseData, TerritoryExternalsData } from "@/lib/connection-calculator";
 import { useTerritoryPrecomputation } from "@/hooks/useTerritoryPrecomputation";
 import {
@@ -33,7 +38,7 @@ import { loadCachedHistory, saveHistoryCache, clearHistoryCache } from "@/lib/hi
 import { FRUMA_TBD_TERRITORIES } from "@/lib/fruma-territories";
 import { shouldRenderTerritory, shouldRenderTradeRoute } from "@/lib/retired-territories";
 
-export function MapPageContent({ initialMode }: { initialMode?: 'live' | 'history' } = {}) {
+export function MapPageContent({ initialMode }: { initialMode?: MapViewMode } = {}) {
   // Store minimum scale in a ref
   const minScaleRef = useRef(0.1);
   
@@ -97,7 +102,16 @@ export function MapPageContent({ initialMode }: { initialMode?: 'live' | 'histor
   const mapImageRef = useRef<HTMLImageElement>(null);
 
   // History mode state
-  const [viewMode, setViewMode] = useState<'live' | 'history'>(initialMode ?? 'live');
+  const [viewMode, setViewMode] = useState<MapViewMode>(initialMode ?? 'live');
+  const [simSelectedTerritory, setSimSelectedTerritory] = useState<string | null>(null);
+
+  // Simulator hook
+  const simulator = useSimulator({
+    verboseData,
+    externalsData,
+    enabled: viewMode === 'simulator',
+  });
+
   const [historyTimestamp, setHistoryTimestamp] = useState<Date | null>(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -224,7 +238,7 @@ export function MapPageContent({ initialMode }: { initialMode?: 'live' | 'histor
     // Only restore cached view mode if no initialMode was provided via URL
     if (!initialMode) {
       const cachedViewMode = localStorage.getItem('mapViewMode');
-      if (cachedViewMode === 'live' || cachedViewMode === 'history') {
+      if (cachedViewMode === 'live' || cachedViewMode === 'history' || cachedViewMode === 'simulator') {
         setViewMode(cachedViewMode);
       }
     }
@@ -756,8 +770,13 @@ export function MapPageContent({ initialMode }: { initialMode?: 'live' | 'histor
   }, [isInitialized, viewMode, historyBounds]);
 
   // Handle mode change
-  const handleModeChange = useCallback(async (mode: 'live' | 'history') => {
+  const handleModeChange = useCallback(async (mode: MapViewMode) => {
     setViewMode(mode);
+    if (mode === 'simulator') {
+      setSelectedTerritory(null);
+      setSimSelectedTerritory(null);
+      return;
+    }
     if (mode === 'history') {
       setIsPlaying(false);
       // Restore cached slider position if available, otherwise use latest
@@ -1104,6 +1123,8 @@ export function MapPageContent({ initialMode }: { initialMode?: 'live' | 'histor
   // Determine which territories to display
   const displayTerritories = viewMode === 'history' && historyTerritories
     ? historyTerritories
+    : viewMode === 'simulator'
+    ? territories // In sim mode, show all territories (overlay handles coloring)
     : territories;
 
   // No longer need snapshotTimestamps — timeline snaps to 10-min boundaries
@@ -1352,8 +1373,18 @@ export function MapPageContent({ initialMode }: { initialMode?: 'live' | 'histor
   // Territory interaction handlers
   const handleTerritoryClick = useCallback((name: string, territory: Territory) => {
     if (viewMode === 'history') return;
+    if (viewMode === 'simulator') {
+      if (simulator.state.ownedTerritories[name]) {
+        // Already owned — open upgrade panel
+        setSimSelectedTerritory(name);
+      } else {
+        // Unowned — claim it
+        simulator.claimTerritory(name);
+      }
+      return;
+    }
     setSelectedTerritory({ name, territory });
-  }, [viewMode]);
+  }, [viewMode, simulator]);
 
   const handleTerritoryHover = useCallback((name: string, territory: Territory) => {
     setHoveredTerritory({ name, territory });
@@ -1585,10 +1616,15 @@ export function MapPageContent({ initialMode }: { initialMode?: 'live' | 'histor
                 guildColors={effectiveGuildColors}
                 showTimeOutlines={viewMode === 'live' && showTimeOutlines}
                 showResourceOutlines={viewMode === 'live' && showResourceOutlines}
-                showGuildNames={viewMode === 'live' || showGuildNames}
+                showGuildNames={viewMode !== 'simulator' && (viewMode === 'live' || showGuildNames)}
                 verboseData={verboseData?.[name] ?? null}
                 opaqueFill={opaqueFill}
                 fallbackColor={showFactions ? '#808080' : '#FFFFFF'}
+                simMode={viewMode === 'simulator' ? {
+                  owned: !!simulator.state.ownedTerritories[name],
+                  isHQ: name === simulator.state.hqTerritoryName,
+                  connected: simulator.connectedTerritories.has(name),
+                } : undefined}
               />
             ))}
             {/* Fruma TBD territories - static white overlays for unreleased territories */}
@@ -1742,7 +1778,7 @@ export function MapPageContent({ initialMode }: { initialMode?: 'live' | 'histor
               </div>
             </div>
           )}
-          {viewMode !== 'history' && !selectedTerritory && (
+          {viewMode !== 'history' && !selectedTerritory && !simSelectedTerritory && (
             <TerritoryHoverPanel
               territory={hoveredTerritory}
               guildColors={effectiveGuildColors}
@@ -1750,18 +1786,60 @@ export function MapPageContent({ initialMode }: { initialMode?: 'live' | 'histor
             />
           )}
 
-          {/* Territory Info Panel - shown when a territory is clicked */}
-          <TerritoryInfoPanel
-            selectedTerritory={selectedTerritory}
-            onClose={() => setSelectedTerritory(null)}
-            panelId="territory-info-panel"
-            guildColors={effectiveGuildColors}
-            territories={territories}
-            verboseData={verboseData}
-            externalsData={externalsData}
-          />
-          
-          <GuildTerritoryCount territories={displayTerritories} onGuildClick={handleGuildZoom} guildColors={effectiveGuildColors} showLandView={showLandView} />
+          {/* Territory Info Panel - shown when a territory is clicked (live mode only) */}
+          {viewMode !== 'simulator' && (
+            <TerritoryInfoPanel
+              selectedTerritory={selectedTerritory}
+              onClose={() => setSelectedTerritory(null)}
+              panelId="territory-info-panel"
+              guildColors={effectiveGuildColors}
+              territories={territories}
+              verboseData={verboseData}
+              externalsData={externalsData}
+            />
+          )}
+
+          {/* Simulator panels */}
+          {viewMode === 'simulator' && (
+            <>
+              {simSelectedTerritory && (
+                <SimTerritoryPanel
+                  territoryName={simSelectedTerritory}
+                  simTerritory={simulator.state.ownedTerritories[simSelectedTerritory] || null}
+                  verboseData={verboseData}
+                  externalsData={externalsData}
+                  ownedTerritories={simulator.state.ownedTerritories}
+                  hqTerritoryName={simulator.state.hqTerritoryName}
+                  hqEmeralds={simulator.state.hqStorage.resources.emeralds}
+                  hqResources={simulator.state.hqStorage.resources}
+                  ownedCount={simulator.ownedCount}
+                  connectedTerritories={simulator.connectedTerritories}
+                  onClose={() => setSimSelectedTerritory(null)}
+                  onClaim={simulator.claimTerritory}
+                  onUnclaim={simulator.unclaimTerritory}
+                  onSetHQ={simulator.setHQ}
+                  onPurchaseUpgrade={simulator.purchaseUpgrade}
+                  onRefundUpgrade={simulator.refundUpgrade}
+                />
+              )}
+              <SimulatorControlPanel
+                ownedCount={simulator.ownedCount}
+                hqTerritoryName={simulator.state.hqTerritoryName}
+                hqStorage={simulator.state.hqStorage.resources}
+                maxEmeralds={simulator.state.hqStorage.maxEmeralds}
+                maxResources={simulator.state.hqStorage.maxResources}
+                totalProduction={simulator.totalProduction}
+                nextAttackCost={simulator.nextAttackCost}
+                totalEmeraldsGenerated={simulator.state.totalEmeraldsGenerated}
+                totalResourcesGenerated={simulator.state.totalResourcesGenerated}
+                onReset={simulator.reset}
+              />
+            </>
+          )}
+
+          {viewMode !== 'simulator' && (
+            <GuildTerritoryCount territories={displayTerritories} onGuildClick={handleGuildZoom} guildColors={effectiveGuildColors} showLandView={showLandView} />
+          )}
 
           {/* Zoom Controls */}
           <div style={{
@@ -1989,6 +2067,18 @@ export function MapPageContent({ initialMode }: { initialMode?: 'live' | 'histor
             gap: '0.5rem',
             zIndex: 15,
           }}>
+            {/* Simulator Speed Controls - shown in sim mode */}
+            {viewMode === 'simulator' && (
+              <SimSpeedControls
+                isRunning={simulator.state.isRunning}
+                speed={simulator.state.speed}
+                tickCount={simulator.state.tickCount}
+                onToggleRunning={simulator.toggleRunning}
+                onSetSpeed={simulator.setSpeed}
+                onStep={simulator.stepOnce}
+              />
+            )}
+
             {/* Mode Selector - always to the left */}
             <MapModeSelector
               mode={viewMode}

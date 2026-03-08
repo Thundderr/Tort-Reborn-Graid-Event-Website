@@ -1,8 +1,10 @@
 "use client";
 
+export type MapViewMode = 'live' | 'history' | 'simulator';
+
 interface MapModeSelectorProps {
-  mode: 'live' | 'history';
-  onModeChange: (mode: 'live' | 'history') => void;
+  mode: MapViewMode;
+  onModeChange: (mode: MapViewMode) => void;
   historyAvailable: boolean;
 }
 
@@ -11,6 +13,19 @@ export default function MapModeSelector({
   onModeChange,
   historyAvailable,
 }: MapModeSelectorProps) {
+  const buttonStyle = (active: boolean, disabled?: boolean) => ({
+    padding: '0.5rem 1rem',
+    borderRadius: '0.375rem',
+    border: 'none',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    fontWeight: active ? '600' : '400',
+    fontSize: '0.875rem',
+    background: active ? 'var(--accent-primary)' : 'transparent',
+    color: active ? 'var(--text-on-accent)' : 'var(--text-secondary)',
+    opacity: disabled ? 0.5 : 1,
+    transition: 'all 0.15s ease',
+  });
+
   return (
     <div
       style={{
@@ -25,17 +40,7 @@ export default function MapModeSelector({
       <button
         type="button"
         onClick={() => onModeChange('live')}
-        style={{
-          padding: '0.5rem 1rem',
-          borderRadius: '0.375rem',
-          border: 'none',
-          cursor: 'pointer',
-          fontWeight: mode === 'live' ? '600' : '400',
-          fontSize: '0.875rem',
-          background: mode === 'live' ? 'var(--accent-primary)' : 'transparent',
-          color: mode === 'live' ? 'var(--text-on-accent)' : 'var(--text-secondary)',
-          transition: 'all 0.15s ease',
-        }}
+        style={buttonStyle(mode === 'live')}
       >
         Live
       </button>
@@ -43,20 +48,16 @@ export default function MapModeSelector({
         type="button"
         onClick={() => historyAvailable && onModeChange('history')}
         disabled={!historyAvailable}
-        style={{
-          padding: '0.5rem 1rem',
-          borderRadius: '0.375rem',
-          border: 'none',
-          cursor: historyAvailable ? 'pointer' : 'not-allowed',
-          fontWeight: mode === 'history' ? '600' : '400',
-          fontSize: '0.875rem',
-          background: mode === 'history' ? 'var(--accent-primary)' : 'transparent',
-          color: mode === 'history' ? 'var(--text-on-accent)' : 'var(--text-secondary)',
-          opacity: historyAvailable ? 1 : 0.5,
-          transition: 'all 0.15s ease',
-        }}
+        style={buttonStyle(mode === 'history', !historyAvailable)}
       >
         History
+      </button>
+      <button
+        type="button"
+        onClick={() => onModeChange('simulator')}
+        style={buttonStyle(mode === 'simulator')}
+      >
+        Simulator
       </button>
     </div>
   );

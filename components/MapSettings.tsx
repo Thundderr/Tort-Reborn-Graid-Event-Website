@@ -5,7 +5,7 @@ import React from "react";
 interface MapSettingsProps {
   isOpen: boolean;
   onClose: () => void;
-  viewMode: 'live' | 'history';
+  viewMode: 'live' | 'history' | 'simulator';
   // Live mode settings
   showTerritories: boolean;
   onShowTerritoriesChange: (value: boolean) => void;
