@@ -44,9 +44,9 @@ export async function GET(request: NextRequest) {
 
     const [seasonResult, ignResult, snipedHqResult, seasonsResult, guildDataResult] = await Promise.all([
       pool.query(`SELECT value FROM snipe_settings WHERE key = 'current_season'`),
-      pool.query(`SELECT DISTINCT ign FROM snipe_participants ORDER BY ign`),
-      pool.query(`SELECT DISTINCT hq FROM snipe_logs`),
-      pool.query(`SELECT DISTINCT season FROM snipe_logs ORDER BY season`),
+      pool.query(`SELECT DISTINCT sp.ign FROM snipe_participants sp JOIN snipe_logs sl ON sp.snipe_id = sl.id WHERE sl.deleted_at IS NULL ORDER BY sp.ign`),
+      pool.query(`SELECT DISTINCT hq FROM snipe_logs WHERE deleted_at IS NULL`),
+      pool.query(`SELECT DISTINCT season FROM snipe_logs WHERE deleted_at IS NULL ORDER BY season`),
       pool.query(`SELECT data FROM cache_entries WHERE cache_key = 'guildData'`),
     ]);
 

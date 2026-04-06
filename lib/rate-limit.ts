@@ -12,6 +12,7 @@ function isTestMode(): boolean {
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute in milliseconds
 const MAX_REQUESTS_PER_WINDOW = 30; // Maximum requests per window
 const MAX_REQUESTS_PER_ENDPOINT = 10; // Maximum requests per specific endpoint per window
+const MAX_DESTRUCTIVE_PER_WINDOW = 5; // Maximum destructive operations (DELETE, bulk) per window
 
 // In-memory store for rate limiting (use Redis in production)
 const requestCounts = new Map<string, { count: number; endpointCounts: Map<string, number>; resetTime: number }>();
@@ -75,8 +76,9 @@ export function checkRateLimit(request: NextRequest, endpoint?: string): { allow
 
   // Check endpoint-specific rate limit if endpoint is provided
   if (endpoint) {
+    const maxForEndpoint = endpoint === 'destructive' ? MAX_DESTRUCTIVE_PER_WINDOW : MAX_REQUESTS_PER_ENDPOINT;
     const endpointCount = rateLimitData.endpointCounts.get(endpoint) || 0;
-    if (endpointCount >= MAX_REQUESTS_PER_ENDPOINT) {
+    if (endpointCount >= maxForEndpoint) {
       return {
         allowed: false,
         remainingRequests: 0,

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireExecSession } from '@/lib/exec-auth';
 import { getPool } from '@/lib/db';
 import { RANK_HIERARCHY, PROMO_VISIBILITY_RANK_THRESHOLD_IDX, PROMO_VISIBILITY_MIN_VIEWER_IDX } from '@/lib/rank-constants';
+import { auditLog } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,6 +44,8 @@ export async function POST(request: NextRequest) {
       [uuid, ign, currentRank, session.discord_id, session.ign, trimmedReason || null]
     );
 
+    await auditLog({ logType: 'promotion', session, action: `Suggested promotion for ${ign}`, targetTable: 'promo_suggestions', targetId: uuid, httpMethod: 'POST', request });
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Promo suggestion error:', error);
@@ -65,14 +68,22 @@ export async function DELETE(request: NextRequest) {
     }
 
     const pool = getPool();
-    const result = await pool.query(
-      `DELETE FROM promo_suggestions WHERE id = $1`,
+
+    const old = await pool.query(
+      `SELECT * FROM promo_suggestions WHERE id = $1 AND deleted_at IS NULL`,
       [id]
+    );
+
+    const result = await pool.query(
+      `UPDATE promo_suggestions SET deleted_at = NOW(), deleted_by = $2 WHERE id = $1 AND deleted_at IS NULL`,
+      [id, session.discord_id]
     );
 
     if (result.rowCount === 0) {
       return NextResponse.json({ error: 'Suggestion not found' }, { status: 404 });
     }
+
+    await auditLog({ logType: 'promotion', session, action: `Removed promotion suggestion #${id}`, targetTable: 'promo_suggestions', targetId: String(id), httpMethod: 'DELETE', oldValues: old.rows[0] || null, request });
 
     return NextResponse.json({ success: true });
   } catch (error) {

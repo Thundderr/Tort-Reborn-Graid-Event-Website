@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireExecSession } from '@/lib/exec-auth';
 import { getPool } from '@/lib/db';
+import { auditLog } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -82,6 +83,8 @@ export async function POST(
         abstain: parseInt(votesResult.rows[0].abstain, 10),
       };
 
+      await auditLog({ logType: 'application', session, action: `Voted '${vote}' on application #${applicationId}`, targetTable: 'application_votes', targetId: String(applicationId), httpMethod: 'POST', request });
+
       return NextResponse.json({
         success: true,
         vote,
@@ -140,6 +143,8 @@ export async function DELETE(
         deny: parseInt(votesResult.rows[0].deny, 10),
         abstain: parseInt(votesResult.rows[0].abstain, 10),
       };
+
+      await auditLog({ logType: 'application', session, action: `Removed vote on application #${applicationId}`, targetTable: 'application_votes', targetId: String(applicationId), httpMethod: 'DELETE', request });
 
       return NextResponse.json({
         success: true,

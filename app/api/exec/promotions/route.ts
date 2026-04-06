@@ -3,6 +3,7 @@ import { requireExecSession } from '@/lib/exec-auth';
 import { getPool } from '@/lib/db';
 import { RANK_HIERARCHY, PROMO_VISIBILITY_RANK_THRESHOLD_IDX, PROMO_VISIBILITY_MIN_VIEWER_IDX } from '@/lib/rank-constants';
 import simpleDatabaseCache from '@/lib/db-cache-simple';
+import { auditLog } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,7 +27,7 @@ export async function GET(request: NextRequest) {
         `SELECT id, uuid, ign, current_rank, new_rank, action_type,
                 queued_by_ign, created_at, status, completed_at, error_message
          FROM promotion_queue
-         WHERE status = 'pending'
+         WHERE status = 'pending' AND deleted_at IS NULL
          ORDER BY created_at ASC`
       ),
       // Recent history
@@ -34,7 +35,7 @@ export async function GET(request: NextRequest) {
         `SELECT id, uuid, ign, current_rank, new_rank, action_type,
                 queued_by_ign, created_at, status, completed_at, error_message
          FROM promotion_queue
-         WHERE status IN ('completed', 'failed')
+         WHERE status IN ('completed', 'failed') AND deleted_at IS NULL
          ORDER BY completed_at DESC
          LIMIT 50`
       ),
@@ -44,6 +45,7 @@ export async function GET(request: NextRequest) {
                 dl.discord_id
          FROM promo_suggestions ps
          LEFT JOIN discord_links dl ON dl.uuid = ps.uuid
+         WHERE ps.deleted_at IS NULL
          ORDER BY ps.created_at DESC`
       ),
       // 7-day activity snapshots
@@ -185,7 +187,7 @@ export async function POST(request: NextRequest) {
 
     // Check for duplicate pending entry
     const existing = await pool.query(
-      `SELECT id FROM promotion_queue WHERE uuid = $1 AND status = 'pending'`,
+      `SELECT id FROM promotion_queue WHERE uuid = $1 AND status = 'pending' AND deleted_at IS NULL`,
       [uuid]
     );
     if (existing.rowCount && existing.rowCount > 0) {
@@ -199,7 +201,12 @@ export async function POST(request: NextRequest) {
     );
 
     // Auto-remove from promo suggestions if present
-    await pool.query(`DELETE FROM promo_suggestions WHERE uuid = $1`, [uuid]);
+    await pool.query(
+      `UPDATE promo_suggestions SET deleted_at = NOW(), deleted_by = $2 WHERE uuid = $1 AND deleted_at IS NULL`,
+      [uuid, session.discord_id]
+    );
+
+    await auditLog({ logType: 'promotion', session, action: `Queued ${actionType} for ${ign}: ${currentRank} -> ${newRank || 'removed'}`, targetTable: 'promotion_queue', targetId: uuid, httpMethod: 'POST', request });
 
     return NextResponse.json({ success: true });
   } catch (error) {

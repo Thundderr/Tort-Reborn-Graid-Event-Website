@@ -22,6 +22,11 @@ function getNavGroups(discordId?: string) {
       label: 'Analytics',
       icon: 'M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z',
     });
+    operationsItems.push({
+      href: '/exec/admin',
+      label: 'Admin',
+      icon: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z',
+    });
   }
 
   return [

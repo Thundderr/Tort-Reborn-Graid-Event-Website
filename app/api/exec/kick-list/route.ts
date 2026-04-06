@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireExecSession } from '@/lib/exec-auth';
 import { getPool } from '@/lib/db';
+import { auditLog } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,7 +25,8 @@ export async function GET(request: NextRequest) {
     // to prevent mass-deletion when cached data is stale/incomplete
     if (guildUUIDs.size >= 120) {
       await pool.query(
-        `DELETE FROM kick_list WHERE uuid != ALL($1::varchar[])`,
+        `UPDATE kick_list SET deleted_at = NOW(), deleted_by = 0
+         WHERE uuid != ALL($1::varchar[]) AND deleted_at IS NULL`,
         [Array.from(guildUUIDs)]
       );
     }
@@ -33,10 +35,11 @@ export async function GET(request: NextRequest) {
       pool.query(
         `SELECT uuid, ign, tier, added_by, created_at
          FROM kick_list
+         WHERE deleted_at IS NULL
          ORDER BY tier ASC, created_at ASC`
       ),
       pool.query(
-        `SELECT created_at, added_by FROM kick_list ORDER BY created_at DESC LIMIT 1`
+        `SELECT created_at, added_by FROM kick_list WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 1`
       ),
       pool.query(
         `SELECT COUNT(*) as count FROM applications a
@@ -94,6 +97,8 @@ export async function POST(request: NextRequest) {
       [uuid, ign, tier, session.ign]
     );
 
+    await auditLog({ logType: 'kick_list', session, action: `Added ${ign} to kick list (tier ${tier})`, targetTable: 'kick_list', targetId: uuid, httpMethod: 'POST', request });
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Kick list add error:', error);
@@ -118,7 +123,13 @@ export async function DELETE(request: NextRequest) {
     }
 
     const pool = getPool();
-    await pool.query(`DELETE FROM kick_list WHERE uuid = $1`, [uuid]);
+    const old = await pool.query(`SELECT * FROM kick_list WHERE uuid = $1 AND deleted_at IS NULL`, [uuid]);
+    await pool.query(
+      `UPDATE kick_list SET deleted_at = NOW(), deleted_by = $2 WHERE uuid = $1 AND deleted_at IS NULL`,
+      [uuid, session.discord_id]
+    );
+
+    await auditLog({ logType: 'kick_list', session, action: `Removed ${uuid} from kick list`, targetTable: 'kick_list', targetId: uuid, httpMethod: 'DELETE', oldValues: old.rows[0] || null, request });
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -144,10 +155,13 @@ export async function PATCH(request: NextRequest) {
     }
 
     const pool = getPool();
+    const old = await pool.query(`SELECT * FROM kick_list WHERE uuid = $1 AND deleted_at IS NULL`, [uuid]);
     await pool.query(
-      `UPDATE kick_list SET tier = $1, created_at = NOW() WHERE uuid = $2`,
+      `UPDATE kick_list SET tier = $1, created_at = NOW() WHERE uuid = $2 AND deleted_at IS NULL`,
       [tier, uuid]
     );
+
+    await auditLog({ logType: 'kick_list', session, action: `Updated ${uuid} tier to ${tier}`, targetTable: 'kick_list', targetId: uuid, httpMethod: 'PATCH', oldValues: old.rows[0] || null, request });
 
     return NextResponse.json({ success: true });
   } catch (error) {

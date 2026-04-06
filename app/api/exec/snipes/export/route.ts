@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     const dateTo = url.searchParams.get('dateTo');
     const sort = url.searchParams.get('sort') || 'Newest';
 
-    const conditions: string[] = [];
+    const conditions: string[] = ['sl.deleted_at IS NULL'];
     const params: any[] = [];
     let paramIdx = 1;
 

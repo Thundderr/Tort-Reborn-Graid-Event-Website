@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
 
     // Get the current ticket
     const ticketResult = await pool.query(
-      'SELECT id, status, position FROM tracker_tickets WHERE id = $1',
+      'SELECT id, status, position FROM tracker_tickets WHERE id = $1 AND deleted_at IS NULL',
       [ticketId]
     );
     if (ticketResult.rows.length === 0) {
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
 
     // Get all tickets in the target column ordered by position
     const columnResult = await pool.query(
-      'SELECT id, position FROM tracker_tickets WHERE status = $1 AND id != $2 ORDER BY position ASC, created_at DESC',
+      'SELECT id, position FROM tracker_tickets WHERE status = $1 AND id != $2 AND deleted_at IS NULL ORDER BY position ASC, created_at DESC',
       [targetStatus, ticketId]
     );
 

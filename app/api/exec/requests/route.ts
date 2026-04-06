@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
 
     // Build dynamic WHERE clause
-    const conditions: string[] = [];
+    const conditions: string[] = ['t.deleted_at IS NULL'];
     const params: (string | string[])[] = [];
     let paramIdx = 1;
 

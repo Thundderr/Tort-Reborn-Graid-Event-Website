@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireExecSession } from '@/lib/exec-auth';
 import { getPool } from '@/lib/db';
+import { auditLog } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,6 +23,11 @@ export async function PATCH(
 
     const updates = await request.json();
     const pool = getPool();
+
+    const old = await pool.query(
+      `SELECT * FROM graid_events WHERE id = $1 AND deleted_at IS NULL`,
+      [eventId]
+    );
 
     // Build dynamic SET clause
     const setClauses: string[] = [];
@@ -71,9 +77,11 @@ export async function PATCH(
 
     values.push(eventId);
     await pool.query(
-      `UPDATE graid_events SET ${setClauses.join(', ')} WHERE id = $${paramIndex}`,
+      `UPDATE graid_events SET ${setClauses.join(', ')} WHERE id = $${paramIndex} AND deleted_at IS NULL`,
       values
     );
+
+    await auditLog({ logType: 'graid', session, action: `Updated graid event #${eventId}`, targetTable: 'graid_events', targetId: String(eventId), httpMethod: 'PATCH', oldValues: old.rows[0] || null, request });
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

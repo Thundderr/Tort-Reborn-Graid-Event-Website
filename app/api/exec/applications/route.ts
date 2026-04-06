@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
 
       // Fetch blacklist for cross-referencing
       const blacklistResult = await client.query(
-        `SELECT uuid, reason FROM blacklist`
+        `SELECT uuid, reason FROM blacklist WHERE deleted_at IS NULL`
       );
       const blacklistMap = new Map<string, string | null>();
       for (const row of blacklistResult.rows) {

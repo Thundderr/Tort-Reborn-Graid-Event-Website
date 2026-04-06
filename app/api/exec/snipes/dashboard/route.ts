@@ -15,18 +15,18 @@ export async function GET(request: NextRequest) {
     const url = new URL(request.url);
     const seasonParam = url.searchParams.get('season');
 
-    let seasonClause = '';
+    let seasonClause = 'WHERE sl.deleted_at IS NULL';
     const params: any[] = [];
     if (seasonParam === '0') {
-      // all-time
+      // all-time, just the deleted_at filter
     } else if (seasonParam) {
       params.push(parseInt(seasonParam, 10));
-      seasonClause = `WHERE sl.season = $1`;
+      seasonClause = `WHERE sl.deleted_at IS NULL AND sl.season = $1`;
     } else {
       const seasonRes = await pool.query(`SELECT value FROM snipe_settings WHERE key = 'current_season'`);
       const currentSeason = seasonRes.rows.length > 0 ? parseInt(seasonRes.rows[0].value, 10) : 1;
       params.push(currentSeason);
-      seasonClause = `WHERE sl.season = $1`;
+      seasonClause = `WHERE sl.deleted_at IS NULL AND sl.season = $1`;
     }
 
     // Total snipes
@@ -136,7 +136,7 @@ export async function GET(request: NextRequest) {
 
     // Season comparison
     const seasonCompResult = await pool.query(
-      `SELECT season, COUNT(*) as cnt FROM snipe_logs GROUP BY season ORDER BY season`
+      `SELECT season, COUNT(*) as cnt FROM snipe_logs WHERE deleted_at IS NULL GROUP BY season ORDER BY season`
     );
     const seasonComparison = seasonCompResult.rows.map((r: any) => ({
       season: r.season,

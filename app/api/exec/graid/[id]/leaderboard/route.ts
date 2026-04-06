@@ -31,7 +31,7 @@ export async function GET(
     const evRes = await pool.query(
       `SELECT id, title, start_ts, end_ts, low_rank_reward, high_rank_reward,
               min_completions, bonus_threshold, bonus_amount, active
-       FROM graid_events WHERE id = $1`,
+       FROM graid_events WHERE id = $1 AND deleted_at IS NULL`,
       [eventId]
     );
 

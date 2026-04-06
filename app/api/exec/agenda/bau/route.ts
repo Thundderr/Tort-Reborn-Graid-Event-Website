@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireExecSession } from '@/lib/exec-auth';
 import { getPool } from '@/lib/db';
+import { auditLog } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,7 +14,7 @@ export async function GET(request: NextRequest) {
   try {
     const pool = getPool();
     const result = await pool.query(
-      `SELECT id, topic, description FROM agenda_bau_topics ORDER BY id ASC`
+      `SELECT id, topic, description FROM agenda_bau_topics WHERE deleted_at IS NULL ORDER BY id ASC`
     );
 
     return NextResponse.json({
@@ -47,6 +48,8 @@ export async function POST(request: NextRequest) {
       [topic.trim(), description?.trim() || null]
     );
 
+    await auditLog({ logType: 'agenda', session, action: `Added BAU topic: ${topic.trim()}`, targetTable: 'agenda_bau_topics', httpMethod: 'POST', request });
+
     return NextResponse.json({ success: true });
   } catch (error: any) {
     if (error?.code === '23505') {
@@ -70,10 +73,13 @@ export async function PATCH(request: NextRequest) {
     }
 
     const pool = getPool();
+    const old = await pool.query(`SELECT * FROM agenda_bau_topics WHERE id = $1 AND deleted_at IS NULL`, [id]);
     await pool.query(
-      `UPDATE agenda_bau_topics SET topic = $1, description = $2 WHERE id = $3`,
+      `UPDATE agenda_bau_topics SET topic = $1, description = $2 WHERE id = $3 AND deleted_at IS NULL`,
       [topic.trim(), description?.trim() || null, id]
     );
+
+    await auditLog({ logType: 'agenda', session, action: `Updated BAU topic ${id}`, targetTable: 'agenda_bau_topics', targetId: String(id), httpMethod: 'PATCH', oldValues: old.rows[0] || null, request });
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
@@ -98,7 +104,13 @@ export async function DELETE(request: NextRequest) {
     }
 
     const pool = getPool();
-    await pool.query(`DELETE FROM agenda_bau_topics WHERE id = $1`, [id]);
+    const old = await pool.query(`SELECT * FROM agenda_bau_topics WHERE id = $1 AND deleted_at IS NULL`, [id]);
+    await pool.query(
+      `UPDATE agenda_bau_topics SET deleted_at = NOW(), deleted_by = $2 WHERE id = $1 AND deleted_at IS NULL`,
+      [id, session.discord_id]
+    );
+
+    await auditLog({ logType: 'agenda', session, action: `Deleted BAU topic ${id}`, targetTable: 'agenda_bau_topics', targetId: String(id), httpMethod: 'DELETE', oldValues: old.rows[0] || null, request });
 
     return NextResponse.json({ success: true });
   } catch (error) {

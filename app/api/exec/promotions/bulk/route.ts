@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireExecSession } from '@/lib/exec-auth';
 import { getPool } from '@/lib/db';
 import { RANK_HIERARCHY } from '@/lib/rank-constants';
+import { auditLog } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -64,7 +65,7 @@ export async function POST(request: NextRequest) {
       // Check for duplicates
       const uuids = entries.map((e: any) => e.uuid);
       const existing = await client.query(
-        `SELECT uuid FROM promotion_queue WHERE uuid = ANY($1::uuid[]) AND status = 'pending'`,
+        `SELECT uuid FROM promotion_queue WHERE uuid = ANY($1::uuid[]) AND status = 'pending' AND deleted_at IS NULL`,
         [uuids]
       );
       const existingUuids = new Set(existing.rows.map((r: any) => r.uuid));
@@ -92,12 +93,16 @@ export async function POST(request: NextRequest) {
         .map((e: any) => e.uuid);
       if (insertedUuids.length > 0) {
         await client.query(
-          `DELETE FROM promo_suggestions WHERE uuid = ANY($1::uuid[])`,
-          [insertedUuids]
+          `UPDATE promo_suggestions SET deleted_at = NOW(), deleted_by = $2
+           WHERE uuid = ANY($1::uuid[]) AND deleted_at IS NULL`,
+          [insertedUuids, session.discord_id]
         );
       }
 
       await client.query('COMMIT');
+
+      await auditLog({ logType: 'promotion', session, action: `Bulk queued ${inserted} promotions (${skipped} skipped)`, targetTable: 'promotion_queue', httpMethod: 'POST', request });
+
       return NextResponse.json({ success: true, inserted, skipped });
     } catch (err) {
       await client.query('ROLLBACK');

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireExecSession } from '@/lib/exec-auth';
 import { getPool } from '@/lib/db';
 import { normalizeHq } from '@/lib/snipe-constants';
+import { auditLog } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,7 +22,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
     const logResult = await pool.query(
       `SELECT id, hq, difficulty, sniped_at, guild_tag, conns, logged_by, season
-       FROM snipe_logs WHERE id = $1`,
+       FROM snipe_logs WHERE id = $1 AND deleted_at IS NULL`,
       [id]
     );
 
@@ -69,7 +70,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     }
 
     // Check exists
-    const existing = await pool.query(`SELECT id FROM snipe_logs WHERE id = $1`, [id]);
+    const existing = await pool.query(`SELECT id FROM snipe_logs WHERE id = $1 AND deleted_at IS NULL`, [id]);
     if (existing.rows.length === 0) {
       return NextResponse.json({ error: 'Snipe not found' }, { status: 404 });
     }
@@ -156,11 +157,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     if (season !== undefined) changes.push(`season=${season}`);
     if (participants !== undefined) changes.push(`participants=${participants.length}`);
 
-    await pool.query(
-      `INSERT INTO audit_log (log_type, actor_name, actor_id, action)
-       VALUES ('snipe', $1, $2, $3)`,
-      [session.ign, session.discord_id, `Updated snipe #${id}: ${changes.join(', ')}`]
-    );
+    await auditLog({ logType: 'snipe', session, action: `Updated snipe #${id}: ${changes.join(', ')}`, targetTable: 'snipe_logs', targetId: String(id), httpMethod: 'PATCH', request });
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -185,7 +182,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
 
     // Get info for audit log before deleting
     const logResult = await pool.query(
-      `SELECT hq, difficulty, guild_tag FROM snipe_logs WHERE id = $1`,
+      `SELECT hq, difficulty, guild_tag FROM snipe_logs WHERE id = $1 AND deleted_at IS NULL`,
       [id]
     );
     if (logResult.rows.length === 0) {
@@ -194,16 +191,13 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
 
     const row = logResult.rows[0];
 
-    // Delete participants first, then log
-    await pool.query(`DELETE FROM snipe_participants WHERE snipe_id = $1`, [id]);
-    await pool.query(`DELETE FROM snipe_logs WHERE id = $1`, [id]);
-
-    // Audit log
+    // Soft delete (participants kept intact for potential restore)
     await pool.query(
-      `INSERT INTO audit_log (log_type, actor_name, actor_id, action)
-       VALUES ('snipe', $1, $2, $3)`,
-      [session.ign, session.discord_id, `Deleted snipe #${id}: ${row.hq} ${row.difficulty}k vs [${row.guild_tag}]`]
+      `UPDATE snipe_logs SET deleted_at = NOW(), deleted_by = $2 WHERE id = $1`,
+      [id, session.discord_id]
     );
+
+    await auditLog({ logType: 'snipe', session, action: `Deleted snipe #${id}: ${row.hq} ${row.difficulty}k vs [${row.guild_tag}]`, targetTable: 'snipe_logs', targetId: String(id), httpMethod: 'DELETE', oldValues: row, request });
 
     return NextResponse.json({ success: true });
   } catch (error) {

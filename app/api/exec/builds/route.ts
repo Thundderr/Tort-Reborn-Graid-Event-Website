@@ -3,6 +3,7 @@ import { requireExecSession } from '@/lib/exec-auth';
 import { getPool } from '@/lib/db';
 import simpleDatabaseCache from '@/lib/db-cache-simple';
 import { isValidFlagKey } from '@/lib/build-constants';
+import { auditLog } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,7 +56,7 @@ export async function GET(request: NextRequest) {
     try {
       // Fetch definitions, discord links, builds, and flags in parallel
       const [defsResult, discordLinksResult, buildsResult, flagsResult] = await Promise.all([
-        client.query('SELECT key, name, role, color, conns_url, hq_url, sort_order FROM build_definitions ORDER BY sort_order'),
+        client.query('SELECT key, name, role, color, conns_url, hq_url, sort_order FROM build_definitions WHERE deleted_at IS NULL ORDER BY sort_order'),
         client.query('SELECT uuid, rank, discord_id, ign FROM discord_links'),
         client.query('SELECT uuid, build_key, created_at FROM member_builds'),
         client.query('SELECT uuid, flag FROM member_war_flags'),
@@ -172,7 +173,7 @@ export async function POST(request: NextRequest) {
 
     // Validate build key exists in DB
     const pool = getPool();
-    const defCheck = await pool.query('SELECT 1 FROM build_definitions WHERE key = $1', [buildKey]);
+    const defCheck = await pool.query('SELECT 1 FROM build_definitions WHERE key = $1 AND deleted_at IS NULL', [buildKey]);
     if (defCheck.rowCount === 0) {
       return NextResponse.json({ error: 'Invalid build key' }, { status: 400 });
     }
@@ -183,6 +184,8 @@ export async function POST(request: NextRequest) {
        ON CONFLICT DO NOTHING`,
       [uuid, buildKey, session.ign]
     );
+
+    await auditLog({ logType: 'build', session, action: `Assigned build ${buildKey} to ${uuid}`, targetTable: 'member_builds', targetId: uuid, httpMethod: 'POST', request });
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -211,6 +214,8 @@ export async function DELETE(request: NextRequest) {
       `DELETE FROM member_builds WHERE uuid = $1 AND build_key = $2`,
       [uuid, buildKey]
     );
+
+    await auditLog({ logType: 'build', session, action: `Removed build ${buildKey} from ${uuid}`, targetTable: 'member_builds', targetId: uuid, httpMethod: 'DELETE', request });
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -252,6 +257,8 @@ export async function PATCH(request: NextRequest) {
         [uuid, flag]
       );
     }
+
+    await auditLog({ logType: 'build', session, action: `${action === 'add' ? 'Added' : 'Removed'} war flag ${flag} for ${uuid}`, targetTable: 'member_war_flags', targetId: uuid, httpMethod: 'PATCH', request });
 
     return NextResponse.json({ success: true });
   } catch (error) {

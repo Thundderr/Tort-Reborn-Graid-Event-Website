@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireExecSession } from '@/lib/exec-auth';
 import { getPool } from '@/lib/db';
+import { auditLog } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,7 +30,7 @@ export async function POST(
 
     // Verify ticket exists
     const ticketCheck = await pool.query(
-      `SELECT id FROM tracker_tickets WHERE id = $1`,
+      `SELECT id FROM tracker_tickets WHERE id = $1 AND deleted_at IS NULL`,
       [ticketId]
     );
     if (ticketCheck.rows.length === 0) {
@@ -46,6 +47,8 @@ export async function POST(
       `UPDATE tracker_tickets SET updated_at = NOW() WHERE id = $1`,
       [ticketId]
     );
+
+    await auditLog({ logType: 'tracker', session, action: `Added comment to ticket #${ticketId}`, targetTable: 'tracker_comments', targetId: String(ticketId), httpMethod: 'POST', request });
 
     return NextResponse.json({ success: true });
   } catch (error) {

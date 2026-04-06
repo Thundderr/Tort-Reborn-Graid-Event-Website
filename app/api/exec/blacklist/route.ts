@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireExecSession } from '@/lib/exec-auth';
 import { getPool } from '@/lib/db';
+import { auditLog } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,7 +14,7 @@ export async function GET(request: NextRequest) {
   try {
     const pool = getPool();
     const result = await pool.query(
-      `SELECT uuid, ign, reason, created_at FROM blacklist ORDER BY created_at DESC`
+      `SELECT uuid, ign, reason, created_at FROM blacklist WHERE deleted_at IS NULL ORDER BY created_at DESC`
     );
 
     return NextResponse.json({
@@ -77,6 +78,8 @@ export async function POST(request: NextRequest) {
       [uuid, username, reason?.trim() || null]
     );
 
+    await auditLog({ logType: 'blacklist', session, action: `Added ${username} to blacklist`, targetTable: 'blacklist', targetId: uuid, httpMethod: 'POST', request });
+
     return NextResponse.json({ success: true });
   } catch (error: any) {
     if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
@@ -100,10 +103,13 @@ export async function PATCH(request: NextRequest) {
     }
 
     const pool = getPool();
+    const old = await pool.query(`SELECT * FROM blacklist WHERE ign = $1 AND deleted_at IS NULL`, [ign]);
     await pool.query(
-      `UPDATE blacklist SET reason = $1 WHERE ign = $2`,
+      `UPDATE blacklist SET reason = $1 WHERE ign = $2 AND deleted_at IS NULL`,
       [reason?.trim() || null, ign]
     );
+
+    await auditLog({ logType: 'blacklist', session, action: `Updated reason for ${ign}`, targetTable: 'blacklist', targetId: ign, httpMethod: 'PATCH', oldValues: old.rows[0] || null, request });
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -125,7 +131,13 @@ export async function DELETE(request: NextRequest) {
     }
 
     const pool = getPool();
-    await pool.query(`DELETE FROM blacklist WHERE ign = $1`, [ign]);
+    const old = await pool.query(`SELECT * FROM blacklist WHERE ign = $1 AND deleted_at IS NULL`, [ign]);
+    await pool.query(
+      `UPDATE blacklist SET deleted_at = NOW(), deleted_by = $2 WHERE ign = $1 AND deleted_at IS NULL`,
+      [ign, session.discord_id]
+    );
+
+    await auditLog({ logType: 'blacklist', session, action: `Removed ${ign} from blacklist`, targetTable: 'blacklist', targetId: ign, httpMethod: 'DELETE', oldValues: old.rows[0] || null, request });
 
     return NextResponse.json({ success: true });
   } catch (error) {

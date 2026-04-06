@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireExecSession } from '@/lib/exec-auth';
 import { getPool } from '@/lib/db';
+import { auditLog } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,21 +28,14 @@ export async function POST(request: NextRequest) {
     const placeholders = ids.map((_: any, i: number) => `$${i + 1}`).join(',');
 
     if (action === 'delete') {
-      // Delete participants first
-      await pool.query(
-        `DELETE FROM snipe_participants WHERE snipe_id IN (${placeholders})`,
-        ids
-      );
+      // Soft delete (participants kept intact for potential restore)
       const result = await pool.query(
-        `DELETE FROM snipe_logs WHERE id IN (${placeholders})`,
-        ids
+        `UPDATE snipe_logs SET deleted_at = NOW(), deleted_by = $${ids.length + 1}
+         WHERE id IN (${placeholders}) AND deleted_at IS NULL`,
+        [...ids, session.discord_id]
       );
 
-      await pool.query(
-        `INSERT INTO audit_log (log_type, actor_name, actor_id, action)
-         VALUES ('snipe', $1, $2, $3)`,
-        [session.ign, session.discord_id, `Bulk deleted ${result.rowCount} snipes: [${ids.join(', ')}]`]
-      );
+      await auditLog({ logType: 'snipe', session, action: `Bulk deleted ${result.rowCount} snipes: [${ids.join(', ')}]`, targetTable: 'snipe_logs', httpMethod: 'DELETE', request });
 
       return NextResponse.json({ success: true, deleted: result.rowCount });
     }
@@ -56,11 +50,7 @@ export async function POST(request: NextRequest) {
         [...ids, season]
       );
 
-      await pool.query(
-        `INSERT INTO audit_log (log_type, actor_name, actor_id, action)
-         VALUES ('snipe', $1, $2, $3)`,
-        [session.ign, session.discord_id, `Bulk moved ${result.rowCount} snipes to season ${season}: [${ids.join(', ')}]`]
-      );
+      await auditLog({ logType: 'snipe', session, action: `Bulk moved ${result.rowCount} snipes to season ${season}: [${ids.join(', ')}]`, targetTable: 'snipe_logs', httpMethod: 'PATCH', request });
 
       return NextResponse.json({ success: true, updated: result.rowCount });
     }

@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireExecSession } from '@/lib/exec-auth';
 import { getPool } from '@/lib/db';
-import { DeleteObjectCommand } from '@aws-sdk/client-s3';
-import { getS3 } from '@/lib/s3';
+import { auditLog } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,7 +30,7 @@ export async function GET(
        FROM tracker_tickets t
        LEFT JOIN discord_links dl1 ON dl1.discord_id = t.submitted_by
        LEFT JOIN discord_links dl2 ON dl2.discord_id = t.assigned_to
-       WHERE t.id = $1`,
+       WHERE t.id = $1 AND t.deleted_at IS NULL`,
       [ticketId]
     );
 
@@ -195,10 +194,18 @@ export async function PATCH(
     values.push(ticketId);
 
     const pool = getPool();
+
+    const old = await pool.query(
+      `SELECT * FROM tracker_tickets WHERE id = $1 AND deleted_at IS NULL`,
+      [ticketId]
+    );
+
     await pool.query(
-      `UPDATE tracker_tickets SET ${updates.join(', ')} WHERE id = $${paramIdx}`,
+      `UPDATE tracker_tickets SET ${updates.join(', ')} WHERE id = $${paramIdx} AND deleted_at IS NULL`,
       values
     );
+
+    await auditLog({ logType: 'tracker', session, action: `Updated ticket #${ticketId}`, targetTable: 'tracker_tickets', targetId: String(ticketId), httpMethod: 'PATCH', oldValues: old.rows[0] || null, request });
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -225,22 +232,18 @@ export async function DELETE(
 
     const pool = getPool();
 
-    // Clean up S3 objects for any attachments
-    const attResult = await pool.query(
-      'SELECT s3_key FROM tracker_attachments WHERE ticket_id = $1',
+    const old = await pool.query(
+      `SELECT * FROM tracker_tickets WHERE id = $1 AND deleted_at IS NULL`,
       [ticketId]
     );
-    if (attResult.rows.length > 0) {
-      const { client, bucket } = getS3();
-      await Promise.all(
-        attResult.rows.map(row =>
-          client.send(new DeleteObjectCommand({ Bucket: bucket, Key: row.s3_key }))
-            .catch(() => {}) // best-effort cleanup
-        )
-      );
-    }
 
-    await pool.query(`DELETE FROM tracker_tickets WHERE id = $1`, [ticketId]);
+    // Soft delete (S3 attachments retained for potential restore)
+    await pool.query(
+      `UPDATE tracker_tickets SET deleted_at = NOW(), deleted_by = $2 WHERE id = $1 AND deleted_at IS NULL`,
+      [ticketId, session.discord_id]
+    );
+
+    await auditLog({ logType: 'tracker', session, action: `Deleted ticket #${ticketId}`, targetTable: 'tracker_tickets', targetId: String(ticketId), httpMethod: 'DELETE', oldValues: old.rows[0] || null, request });
 
     return NextResponse.json({ success: true });
   } catch (error) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireExecSession } from '@/lib/exec-auth';
 import { getPool } from '@/lib/db';
+import { auditLog } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,7 +18,7 @@ export async function GET(request: NextRequest) {
               de.created_by_discord, COALESCE(dl.ign, 'Unknown') AS created_by_ign
        FROM dashboard_events de
        LEFT JOIN discord_links dl ON dl.discord_id = de.created_by_discord
-       WHERE de.event_date >= NOW() - INTERVAL '1 day'
+       WHERE de.event_date >= NOW() - INTERVAL '1 day' AND de.deleted_at IS NULL
        ORDER BY de.event_date ASC`
     );
 
@@ -58,6 +59,8 @@ export async function POST(request: NextRequest) {
        VALUES ($1, $2, $3, $4)`,
       [title.trim(), description?.trim() || null, eventDate, session.discord_id]
     );
+
+    await auditLog({ logType: 'dashboard_event', session, action: `Created event: ${title.trim()}`, targetTable: 'dashboard_events', httpMethod: 'POST', request });
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -100,11 +103,14 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'No fields to update' }, { status: 400 });
     }
 
+    const old = await pool.query(`SELECT * FROM dashboard_events WHERE id = $1 AND deleted_at IS NULL`, [id]);
     values.push(id);
     await pool.query(
-      `UPDATE dashboard_events SET ${setClauses.join(', ')} WHERE id = $${p}`,
+      `UPDATE dashboard_events SET ${setClauses.join(', ')} WHERE id = $${p} AND deleted_at IS NULL`,
       values
     );
+
+    await auditLog({ logType: 'dashboard_event', session, action: `Updated event ${id}`, targetTable: 'dashboard_events', targetId: String(id), httpMethod: 'PATCH', oldValues: old.rows[0] || null, request });
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -126,7 +132,13 @@ export async function DELETE(request: NextRequest) {
     }
 
     const pool = getPool();
-    await pool.query(`DELETE FROM dashboard_events WHERE id = $1`, [id]);
+    const old = await pool.query(`SELECT * FROM dashboard_events WHERE id = $1 AND deleted_at IS NULL`, [id]);
+    await pool.query(
+      `UPDATE dashboard_events SET deleted_at = NOW(), deleted_by = $2 WHERE id = $1 AND deleted_at IS NULL`,
+      [id, session.discord_id]
+    );
+
+    await auditLog({ logType: 'dashboard_event', session, action: `Deleted event ${id}`, targetTable: 'dashboard_events', targetId: String(id), httpMethod: 'DELETE', oldValues: old.rows[0] || null, request });
 
     return NextResponse.json({ success: true });
   } catch (error) {

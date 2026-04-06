@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireExecSession } from '@/lib/exec-auth';
 import { getPool } from '@/lib/db';
+import { auditLog } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +17,7 @@ export async function GET(request: NextRequest) {
       `SELECT id, title, start_ts, end_ts, active, low_rank_reward, high_rank_reward,
               min_completions, bonus_threshold, bonus_amount, created_at
        FROM graid_events
+       WHERE deleted_at IS NULL
        ORDER BY active DESC, start_ts DESC`
     );
 
@@ -56,7 +58,7 @@ export async function POST(request: NextRequest) {
     const pool = getPool();
 
     // Check no other event is active
-    const activeCheck = await pool.query(`SELECT id FROM graid_events WHERE active = TRUE LIMIT 1`);
+    const activeCheck = await pool.query(`SELECT id FROM graid_events WHERE active = TRUE AND deleted_at IS NULL LIMIT 1`);
     if (activeCheck.rowCount && activeCheck.rowCount > 0) {
       return NextResponse.json({ error: 'Another event is already active. End it first.' }, { status: 400 });
     }
@@ -69,6 +71,8 @@ export async function POST(request: NextRequest) {
       [title.trim(), endDate || null, lowRankReward, highRankReward, minCompletions,
        bonusThreshold || null, bonusAmount || null, session.discord_id]
     );
+
+    await auditLog({ logType: 'graid', session, action: `Created graid event: ${title.trim()}`, targetTable: 'graid_events', targetId: String(result.rows[0].id), httpMethod: 'POST', request });
 
     return NextResponse.json({ success: true, id: result.rows[0].id });
   } catch (error: any) {

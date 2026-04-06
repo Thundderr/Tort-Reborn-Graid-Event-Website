@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireExecSession } from '@/lib/exec-auth';
 import { getPool } from '@/lib/db';
+import { auditLog } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,7 +33,7 @@ export async function POST(request: NextRequest) {
     const pool = getPool();
 
     // Get next sort order
-    const sortResult = await pool.query('SELECT COALESCE(MAX(sort_order), 0) + 1 as next_order FROM build_definitions');
+    const sortResult = await pool.query('SELECT COALESCE(MAX(sort_order), 0) + 1 as next_order FROM build_definitions WHERE deleted_at IS NULL');
     const nextOrder = sortResult.rows[0].next_order;
 
     await pool.query(
@@ -40,6 +41,8 @@ export async function POST(request: NextRequest) {
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [key, name.trim(), role, color, connsUrl?.trim() || '#', hqUrl?.trim() || '#', nextOrder]
     );
+
+    await auditLog({ logType: 'build', session, action: `Created build definition: ${name.trim()}`, targetTable: 'build_definitions', targetId: key, httpMethod: 'POST', request });
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
@@ -74,15 +77,23 @@ export async function PATCH(request: NextRequest) {
     }
 
     const pool = getPool();
+
+    const old = await pool.query(
+      `SELECT * FROM build_definitions WHERE key = $1 AND deleted_at IS NULL`,
+      [key]
+    );
+
     const result = await pool.query(
       `UPDATE build_definitions SET name = $2, role = $3, color = $4, conns_url = $5, hq_url = $6
-       WHERE key = $1`,
+       WHERE key = $1 AND deleted_at IS NULL`,
       [key, name.trim(), role, color, connsUrl?.trim() || '#', hqUrl?.trim() || '#']
     );
 
     if (result.rowCount === 0) {
       return NextResponse.json({ error: 'Build not found' }, { status: 404 });
     }
+
+    await auditLog({ logType: 'build', session, action: `Updated build definition: ${name.trim()}`, targetTable: 'build_definitions', targetId: key, httpMethod: 'PATCH', oldValues: old.rows[0] || null, request });
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -107,16 +118,22 @@ export async function DELETE(request: NextRequest) {
     const client = await pool.connect();
 
     try {
-      await client.query('BEGIN');
-      // Remove all member assignments for this build
-      await client.query('DELETE FROM member_builds WHERE build_key = $1', [key]);
-      // Remove the definition
-      const result = await client.query('DELETE FROM build_definitions WHERE key = $1', [key]);
-      await client.query('COMMIT');
+      const old = await client.query(
+        'SELECT * FROM build_definitions WHERE key = $1 AND deleted_at IS NULL',
+        [key]
+      );
+
+      // Soft delete the definition (member_builds stay linked for potential restore)
+      const result = await client.query(
+        'UPDATE build_definitions SET deleted_at = NOW(), deleted_by = $2 WHERE key = $1 AND deleted_at IS NULL',
+        [key, session.discord_id]
+      );
 
       if (result.rowCount === 0) {
         return NextResponse.json({ error: 'Build not found' }, { status: 404 });
       }
+
+      await auditLog({ logType: 'build', session, action: `Deleted build definition: ${key}`, targetTable: 'build_definitions', targetId: key, httpMethod: 'DELETE', oldValues: old.rows[0] || null, request });
 
       return NextResponse.json({ success: true });
     } catch (error) {

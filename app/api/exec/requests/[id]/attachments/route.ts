@@ -35,7 +35,7 @@ export async function POST(
     const pool = getPool();
 
     // Verify ticket exists
-    const ticketResult = await pool.query('SELECT id FROM tracker_tickets WHERE id = $1', [ticketId]);
+    const ticketResult = await pool.query('SELECT id FROM tracker_tickets WHERE id = $1 AND deleted_at IS NULL', [ticketId]);
     if (ticketResult.rows.length === 0) {
       return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
     }

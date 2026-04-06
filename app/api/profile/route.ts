@@ -99,7 +99,7 @@ export async function GET(request: NextRequest) {
         [session.discord_id]
       ).catch(() => ({ rows: [] })),
       pool.query(
-        `SELECT tier FROM kick_list WHERE uuid = $1`,
+        `SELECT tier FROM kick_list WHERE uuid = $1 AND deleted_at IS NULL`,
         [uuid]
       ).catch(() => ({ rows: [] })),
     ]);

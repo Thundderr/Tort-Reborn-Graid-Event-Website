@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { checkRateLimit, incrementRateLimit, createRateLimitResponse } from './lib/rate-limit';
+import { checkRateLimit, incrementRateLimit, createRateLimitResponse, getRateLimitKey } from './lib/rate-limit';
+import { sendSecurityAlert } from './lib/discord-alert';
 
 export function middleware(request: NextRequest) {
   // Only apply rate limiting to API routes
@@ -8,13 +9,33 @@ export function middleware(request: NextRequest) {
     if (request.nextUrl.pathname === '/api/analytics/track') {
       return NextResponse.next();
     }
+    // Destructive operation rate limiting (DELETE requests and bulk POST to exec routes)
+    const isDestructive =
+      request.nextUrl.pathname.startsWith('/api/exec/') && (
+        request.method === 'DELETE' ||
+        (request.method === 'POST' && request.nextUrl.pathname.includes('/bulk'))
+      );
+
+    if (isDestructive) {
+      const destructiveCheck = checkRateLimit(request, 'destructive');
+      if (!destructiveCheck.allowed) {
+        // Fire-and-forget alert to Discord — don't block the response
+        const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+        sendSecurityAlert(
+          `**Rate limit hit on destructive operations**\nIP: \`${ip}\`\nPath: \`${request.method} ${request.nextUrl.pathname}\`\nSomeone is rapidly deleting data — possible compromised account.`
+        ).catch(() => {});
+        return createRateLimitResponse(destructiveCheck.resetTime);
+      }
+      incrementRateLimit(request, 'destructive');
+    }
+
     // Global rate limiting check (this runs before the specific endpoint rate limiting)
     const rateLimitCheck = checkRateLimit(request);
-    
+
     if (!rateLimitCheck.allowed) {
       return createRateLimitResponse(rateLimitCheck.resetTime);
     }
-    
+
     // Increment global rate limit counter
     incrementRateLimit(request);
     

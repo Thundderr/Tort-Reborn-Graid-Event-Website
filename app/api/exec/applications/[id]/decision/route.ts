@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireExecSession } from '@/lib/exec-auth';
 import { getPool } from '@/lib/db';
+import { auditLog } from '@/lib/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -68,6 +69,9 @@ export async function POST(
     }
 
     const row = result.rows[0];
+
+    await auditLog({ logType: 'application', session, action: `${decision === 'accepted' ? 'Accepted' : 'Denied'} application #${applicationId}`, targetTable: 'applications', targetId: String(applicationId), httpMethod: 'POST', request });
+
     return NextResponse.json({
       success: true,
       status: row.status,
