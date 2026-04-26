@@ -19,6 +19,21 @@ export const RANK_HIERARCHY = [
   'Hammerhead', 'Sailfish', 'Dolphin', 'Narwhal', 'Hydra',
 ];
 
+// Ranks that are allowed to access the exec dashboard (Hammerhead or higher).
+export const EXEC_RANKS = ['Hammerhead', 'Sailfish', 'Dolphin', 'Narwhal', 'Hydra', '✫✪✫ Hydra - Leader'];
+
+// Chief-tier ranks (Dolphin and above). Used for higher-privilege features
+// like the embed editor.
+export const CHIEF_RANKS = ['Dolphin', 'Narwhal', 'Hydra', '✫✪✫ Hydra - Leader'];
+
+export function isExecRank(rank: string | null | undefined): boolean {
+  return !!rank && EXEC_RANKS.includes(rank);
+}
+
+export function isChiefRank(rank: string | null | undefined): boolean {
+  return !!rank && CHIEF_RANKS.includes(rank);
+}
+
 export function getRankColor(rank: string | null | undefined): string {
   return (rank && RANK_COLORS[rank]) || 'var(--text-muted)';
 }

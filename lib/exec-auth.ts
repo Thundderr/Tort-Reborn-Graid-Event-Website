@@ -1,5 +1,11 @@
 import { createHmac, timingSafeEqual, randomBytes } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
+import { CHIEF_RANKS, EXEC_RANKS, isChiefRank } from '@/lib/rank-constants';
+
+// Re-exported so existing imports from '@/lib/exec-auth' keep working.
+// New client-side code should import these directly from '@/lib/rank-constants'
+// to avoid pulling server-only modules (pg, crypto) into the browser bundle.
+export { CHIEF_RANKS, EXEC_RANKS, isChiefRank };
 
 // --- Exec session cookie management ---
 
@@ -146,9 +152,18 @@ export function getBaseUrl(): string {
 
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
 
-// Ranks that are allowed to access the exec dashboard (Hammerhead or higher)
-export const EXEC_RANKS = ['Hammerhead', 'Sailfish', 'Dolphin', 'Narwhal', 'Hydra', '✫✪✫ Hydra - Leader'];
 const ALLOWED_RANKS = EXEC_RANKS;
+
+/**
+ * Like requireExecSession, but additionally requires the user to be a chief.
+ * Returns null if the user isn't authenticated or isn't a chief.
+ */
+export async function requireChiefSession(request: NextRequest): Promise<ExecSessionData | null> {
+  const session = await requireExecSession(request);
+  if (!session) return null;
+  if (!isChiefRank(session.rank)) return null;
+  return session;
+}
 
 export function getDiscordOAuthUrl(state: string): string {
   const clientId = pickEnv('DISCORD_CLIENT_ID', 'TEST_DISCORD_CLIENT_ID');

@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import { useExecSession } from '@/hooks/useExecSession';
-import { getRankColor } from '@/lib/rank-constants';
+import { CHIEF_RANKS, getRankColor } from '@/lib/rank-constants';
 import { ANALYTICS_DISCORD_ID } from '@/lib/analytics-auth';
 import Link from 'next/link';
 import { useEffect, useMemo } from 'react';
@@ -10,11 +10,19 @@ import OnboardingTour from '@/components/OnboardingTour';
 import OnboardingTrigger from '@/components/OnboardingTrigger';
 import { useOnboardingTour } from '@/hooks/useOnboardingTour';
 
-function getNavGroups(discordId?: string) {
+function getNavGroups(discordId?: string, rank?: string | null) {
   const operationsItems = [
     { href: '/exec/agenda', label: 'Agenda', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
     { href: '/exec/requests', label: 'Requests', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4' },
   ];
+
+  if (rank && (CHIEF_RANKS as readonly string[]).includes(rank)) {
+    operationsItems.push({
+      href: '/exec/embeds',
+      label: 'Embeds',
+      icon: 'M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z',
+    });
+  }
 
   if (discordId === ANALYTICS_DISCORD_ID) {
     operationsItems.push({
@@ -72,7 +80,7 @@ export default function ExecLayout({ children }: { children: React.ReactNode }) 
 
   const isPublicPage = PUBLIC_PATHS.includes(pathname);
   const tour = useOnboardingTour(authenticated && isExec && pathname === '/exec');
-  const navGroups = useMemo(() => getNavGroups(user?.discord_id), [user?.discord_id]);
+  const navGroups = useMemo(() => getNavGroups(user?.discord_id, user?.rank), [user?.discord_id, user?.rank]);
 
   useEffect(() => {
     if (!loading && !isPublicPage) {
