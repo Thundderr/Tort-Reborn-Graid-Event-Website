@@ -1,5 +1,5 @@
 {
-  "$comment": "Chronicles wiki seed articles, drafted from the chronicle research corpus (data/chronicle/ and data/wiki/research/) plus targeted forum/archive research. Seed or re-seed with scripts/seed-wiki-articles.mjs. Every claim carries an inline {{cite:...}} superscript; provenance lives in the citation, not the prose (see .claude/skills/chronicle-article/). Checked by scripts/check-article-style.mjs and check-citations.mjs.",
+  "$comment": "Chronicles wiki seed articles, drafted from the chronicle research corpus (data/chronicle/ and data/wiki/research/) plus targeted forum/archive research. Seed or re-seed with scripts/seed-wiki-articles.mjs. Every claim carries an inline {{cite:...}} superscript; provenance lives in the citation, not the prose (see ../.claude/skills/chronicle-article/). Checked by scripts/check-article-style.mjs and check-citations.mjs.",
   "articles": [
     {
       "slug": "3zpz",

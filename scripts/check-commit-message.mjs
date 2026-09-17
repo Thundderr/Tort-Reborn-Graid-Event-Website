@@ -4,7 +4,7 @@
  *
  *   node scripts/check-commit-message.mjs --text "$MSG"
  *
- * CLAUDE.md puts commit messages under the same rule as articles: no direct
+ * The workspace private-archive guide puts commit messages under the same rule as articles: no direct
  * quotes from the private tier, "not in prose, captions, infoboxes, commit
  * messages, or PR descriptions". Nothing was enforcing that half. This repo is
  * public on GitHub, and a session's commit prose describing private findings is

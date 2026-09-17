@@ -1,7 +1,7 @@
 # Chronicle wiki — seeding task sheet
 
 > **The house style now lives in the `chronicle-article` skill**
-> (`.claude/skills/chronicle-article/`). Read `SKILL.md` and its `references/`
+> (`../.claude/skills/chronicle-article/`). Read `SKILL.md` and its `references/`
 > before writing or revising anything. This file covers only what is specific to
 > a bulk seeding task: where the inputs are and what shape the output takes.
 >
